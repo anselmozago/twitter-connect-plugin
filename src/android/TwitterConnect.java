@@ -2,6 +2,7 @@ package com.manifestwebdesign.twitterconnect;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.util.Log;
 
 import org.apache.cordova.CallbackContext;
@@ -15,6 +16,7 @@ import org.json.JSONObject;
 import android.content.Intent;
 
 import com.twitter.sdk.android.Twitter;
+import com.twitter.sdk.android.core.AuthToken;
 import com.twitter.sdk.android.core.Callback;
 import com.twitter.sdk.android.core.Result;
 import com.twitter.sdk.android.core.TwitterAuthConfig;
@@ -63,25 +65,45 @@ public class TwitterConnect extends CordovaPlugin {
 
 	private void login(final Activity activity, final CallbackContext callbackContext) {
 		cordova.getThreadPool().execute(new Runnable() {
-			@Override
-			public void run() {
-				Twitter.logIn(activity, new Callback<TwitterSession>() {
-					@Override
-					public void success(Result<TwitterSession> twitterSessionResult) {
-						Log.v(LOG_TAG, "Successful login session!");
-						callbackContext.success(handleResult(twitterSessionResult.data));
-
-					}
-
-					@Override
-					public void failure(TwitterException e) {
-						Log.v(LOG_TAG, "Failed login session");
-						callbackContext.error("Failed login session");
-					}
-				});
-			}
-		});
+            @Override
+            public void run() {
+                TwitterSession session = Twitter.getSessionManager().getActiveSession();
+                if (session != null) {
+                    SharedPreferences prefs = cordova.getActivity().getPreferences(Context.MODE_PRIVATE);
+                    long sessionStartDate = prefs.getLong("TWITTER_LOGIN_DATE", 0);
+                    long currentDate = System.currentTimeMillis();
+                    if (currentDate - sessionStartDate >= 1000 * 60 * 1) {
+                        Twitter.logOut();
+                        startTwitterLogin(activity, callbackContext);
+                    } else {
+                        callbackContext.success(handleResult(session));
+                    }
+                } else {
+                    startTwitterLogin(activity, callbackContext);
+                }
+            }
+        });
 	}
+
+    private void startTwitterLogin(final Activity activity, final CallbackContext callbackContext) {
+        Twitter.logIn(activity, new Callback<TwitterSession>() {
+            @Override
+            public void success(Result<TwitterSession> twitterSessionResult) {
+                Log.v(LOG_TAG, "Successful login session!");
+                SharedPreferences prefs = cordova.getActivity().getPreferences(Context.MODE_PRIVATE);
+                SharedPreferences.Editor prefEditor = prefs.edit();
+                prefEditor.putLong("TWITTER_LOGIN_DATE", System.currentTimeMillis());
+                prefEditor.commit();
+                callbackContext.success(handleResult(twitterSessionResult.data));
+            }
+
+            @Override
+            public void failure(TwitterException e) {
+                Log.v(LOG_TAG, "Failed login session");
+                callbackContext.error("Failed login session");
+            }
+        });
+    }
 
 	private void logout(final CallbackContext callbackContext) {
 		cordova.getThreadPool().execute(new Runnable() {
